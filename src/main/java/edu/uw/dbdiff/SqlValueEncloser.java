@@ -9,8 +9,8 @@ import java.util.List;
  */
 public enum SqlValueEncloser {
     SINGLE_QUOTE("'%s'", Arrays.asList(new String[]{"VARCHAR2", "VARCHAR", "CHAR"})),
-    TIMESTAMP("ts{%s}", Arrays.asList(new String[]{"TIMESTAMP", "TIMESTAMP(6)"})),
-    DATE("%s", Arrays.asList(new String[]{"DATE"})),
+    TIMESTAMP("TIMESTAMP '%s'}", Arrays.asList(new String[]{"TIMESTAMP", "TIMESTAMP(6)"})),
+    DATE("TO_DATE('%s', 'yyyy/mm/dd hh24:mi:ss')", Arrays.asList(new String[]{"DATE"})),
     NO_QUOTES("%s", Arrays.asList(new String[]{"NUMBER"}));
 
     private List<String> types;
