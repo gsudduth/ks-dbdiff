@@ -1,7 +1,14 @@
 package edu.uw.dbdiff;
 
 
+import org.apache.commons.io.FileUtils;
+
 import javax.activation.UnsupportedDataTypeException;
+import javax.management.RuntimeErrorException;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -16,6 +23,7 @@ import java.util.Map;
 public class DbDiff {
     private static final String DRIVER_CLASS_NAME =  "oracle.jdbc.OracleDriver";
     private static final String JDBC_URL = "jdbc:oracle:thin:@oracle:1521:XE";
+    private static final String FILE_OUTPUT_DIRECTORY = "target/sqls/";
 
     private DbConnection beforeDatabase; //  Connection to the database before changes were made.
     private DbConnection afterDatabase;
@@ -23,7 +31,7 @@ public class DbDiff {
     private static final List<String> UNSUPPORTED_TYPES = Arrays.asList(new String[] {"BLOB", "CLOB"});
 
     public static void main(String[] args) {
-        DbDiff dbDiff = new DbDiff("KSBUNDLEDNEW", "KSBUNDLED", "KSBUNDLED", "KSBUNDLED");
+        DbDiff dbDiff = new DbDiff("KSBUNDLEDNEW", "KSBUNDLEDNEW", "KSBUNDLED", "KSBUNDLED");
         dbDiff.doDiff();
     }
 
@@ -38,6 +46,22 @@ public class DbDiff {
             this.afterDatabase = new DbConnection(DRIVER_CLASS_NAME, JDBC_URL, afterUser, afterPass);
         } catch (Exception e) {
             throw new RuntimeException("Could not get connection to after database.", e);
+        }
+
+        //  Cleanup the output directory from previous runs.
+        File outputDir = new File(FILE_OUTPUT_DIRECTORY);
+        if (outputDir.exists()) {
+            try {
+                FileUtils.deleteDirectory(outputDir);
+            } catch (IOException e) {
+                throw new RuntimeException(String.format("Could not remove pre-existing [%s]: %s", FILE_OUTPUT_DIRECTORY, e.getLocalizedMessage()));
+            }
+        }
+
+        //  Create a new output directory.
+        boolean success = (new File(FILE_OUTPUT_DIRECTORY)).mkdirs();
+        if (!success) {
+            throw new RuntimeException("Count not create " + FILE_OUTPUT_DIRECTORY);
         }
     }
 
@@ -77,15 +101,35 @@ public class DbDiff {
      * @param keys
      */
     private void output(DbConnection afterDatabase, DbResultSet keys) {
+        FileOutputStream fileOut = null;
+        String fileName = String.format("%s/%s.sql", FILE_OUTPUT_DIRECTORY, keys.getTableMetadata().getTableName());
+        try {
+            fileOut = new FileOutputStream(fileName);
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(String.format("Could not open SQL file: %s", fileName));
+        }
+
         //  Fill in the rest of the data (beyond the key(s)) for each row
         for (Map.Entry<String, Map<String, String>> row : keys.getResults().entrySet()) {
             Map<String, String> columns = row.getValue();
             populateRowData(afterDatabase, keys.getTableMetadata(), columns);
-            outputAsSql(keys.getTableMetadata(), columns);
+            try {
+                outputAsSql(keys.getTableMetadata(), columns, fileOut);
+            } catch (IOException e) {
+                System.err.println(String.format("Failed to write state to file [%s]. %s", fileName, e.getLocalizedMessage()));
+            }
+        }
+
+        // Clean up
+        try {
+            fileOut.flush();
+            fileOut.close();
+        } catch (IOException e) {
+             System.err.println(String.format("File [%s] did not close gracefully. %s", fileName, e.getLocalizedMessage()));
         }
     }
 
-    private void outputAsSql(DbTableMetadata tableMetadata, Map<String, String> columns) {
+    private void outputAsSql(DbTableMetadata tableMetadata, Map<String, String> columns, FileOutputStream fileOut) throws IOException {
         //  Create column and values statements.
         StringBuilder cols =  new StringBuilder();
         StringBuilder values =  new StringBuilder();
@@ -109,9 +153,9 @@ public class DbDiff {
         //  Put it all together.
         StringBuilder sql = new StringBuilder("INSERT INTO ");
         sql.append(tableMetadata.getTableName()).append(" ");
-        sql.append(String.format("(%s)\n\tVALUES (%s)\n\\\n", cols.toString(), values.toString()));
+        sql.append(String.format("(%s)\n  VALUES (%s)\n/\n", cols.toString(), values.toString()));
 
-        System.err.print(sql.toString());
+        fileOut.write(sql.toString().getBytes());
     }
 
     private String encloseValue(DbColumnMetadata key, String value) {
@@ -308,13 +352,14 @@ public class DbDiff {
     }
 
     /**
-     * Gets the row count for all tables in a schema.
+     * Gets the row count for all tables in a schema. Since the ALL_TABLES row count is only populated if stats
+     * are being generated and aren't 100% accurate we'll do it the hard way ... select count().
      * @param connection
      * @return
      */
     private Map<String, Integer> findTableCounts(DbConnection connection) {
         Map<String, Integer> counts = new HashMap<String, Integer>();
-        String sql = String.format("select TABLE_NAME, NUM_ROWS from ALL_TABLES where OWNER = '%s'", connection.getSchemaName());
+        String sql = String.format("select TABLE_NAME from ALL_TABLES where OWNER = '%s'", connection.getSchemaName());
         Statement statement = null;
         try {
             statement = connection.getConnection().createStatement();
@@ -322,13 +367,29 @@ public class DbDiff {
 
              while (rs.next()) {
                 String tableName = rs.getString("TABLE_NAME");
-                int rowCount = rs.getInt("NUM_ROWS");
-                counts.put(tableName, rowCount);
+                counts.put(tableName, 0);
             }
             rs.close();
             statement.close();
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw new RuntimeException(String.format("Could not get row counts for schema: %", connection.getSchemaName()), e);
+        }
+
+        for (String tableName : counts.keySet()) {
+            sql = String.format("select count(1) from %s", tableName);
+            try {
+                statement = connection.getConnection().createStatement();
+                ResultSet rs = statement.executeQuery(sql);
+
+                while (rs.next()) {
+                    Integer count = rs.getInt(1);
+                    counts.put(tableName, count);
+                }
+                rs.close();
+                statement.close();
+            } catch (SQLException e) {
+                throw new RuntimeException(String.format("Could not get row counts for schema: %", connection.getSchemaName()), e);
+            }
         }
         return counts;
     }
