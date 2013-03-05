@@ -4,7 +4,6 @@ package edu.uw.dbdiff;
 import org.apache.commons.io.FileUtils;
 
 import javax.activation.UnsupportedDataTypeException;
-import javax.management.RuntimeErrorException;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -93,6 +92,7 @@ public class DbDiff {
               findKeysForNewRows(beforeDatabase, afterDatabase, keys);
               output(afterDatabase, keys);
         }
+        System.err.println("Done.");
     }
 
     /**
@@ -102,7 +102,8 @@ public class DbDiff {
      */
     private void output(DbConnection afterDatabase, DbResultSet keys) {
         FileOutputStream fileOut = null;
-        String fileName = String.format("%s/%s.sql", FILE_OUTPUT_DIRECTORY, keys.getTableMetadata().getTableName());
+        String fileName = String.format("%s%s.sql", FILE_OUTPUT_DIRECTORY, keys.getTableMetadata().getTableName());
+        System.err.println(String.format("Writing %s rows to %s", keys.getResults().size(), fileName));
         try {
             fileOut = new FileOutputStream(fileName);
         } catch (FileNotFoundException e) {
@@ -249,9 +250,6 @@ public class DbDiff {
                     throw new UnsupportedDataTypeException(String.format("Table %s column %s is of type %s and currently not supported.",
                             table.getTableName(), name, type));
                 }
-                if (type.equals("DATE")) {
-                    System.err.println(table.getTableName() + " has DATE");
-                }
                 boolean isKeyColumn = false;
                 if (keyColumns.contains(name)) {
                     isKeyColumn = true;
@@ -334,12 +332,11 @@ public class DbDiff {
      * @return  A list of table names which have new rows of data.
      */
     private List<String> findTablesWithChanges(DbConnection beforeDatabase, DbConnection afterDatabase) {
+        System.err.println(String.format("Getting row counts."));
         List<String> tables = new ArrayList<String>();
 
-        Map<String, Integer> beforeCounts = findTableCounts(beforeDatabase);
-        Map<String, Integer> afterCounts = findTableCounts(afterDatabase);
-
-        System.err.println(String.format("Examining row counts for %s tables.", beforeCounts.size()));
+        Map<String, Integer> beforeCounts = findRowCounts(beforeDatabase);
+        Map<String, Integer> afterCounts = findRowCounts(afterDatabase);
         for (Map.Entry<String, Integer> entry: beforeCounts.entrySet()) {
             String tableName = entry.getKey();
             Integer beforeCount = entry.getValue();
@@ -348,6 +345,7 @@ public class DbDiff {
                 tables.add(tableName);
             }
         }
+        System.err.println(String.format("Examined %s tables. %s contained new rows.", beforeCounts.size(), tables.size()));
         return tables;
     }
 
@@ -357,7 +355,7 @@ public class DbDiff {
      * @param connection
      * @return
      */
-    private Map<String, Integer> findTableCounts(DbConnection connection) {
+    private Map<String, Integer> findRowCounts(DbConnection connection) {
         Map<String, Integer> counts = new HashMap<String, Integer>();
         String sql = String.format("select TABLE_NAME from ALL_TABLES where OWNER = '%s'", connection.getSchemaName());
         Statement statement = null;
