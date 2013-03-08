@@ -1,6 +1,5 @@
 package edu.uw.dbdiff;
 
-
 import org.apache.commons.io.FileUtils;
 
 import javax.activation.UnsupportedDataTypeException;
@@ -27,9 +26,11 @@ public class DbDiff {
     private DbConnection beforeDatabase; //  Connection to the database before changes were made.
     private DbConnection afterDatabase;
 
+    //  These are database types that can't be handled.
     private static final List<String> UNSUPPORTED_TYPES = Arrays.asList(new String[] {"BLOB", "CLOB"});
 
     public static void main(String[] args) {
+        //  TODO: Don't hard code the schema/passwd
         DbDiff dbDiff = new DbDiff("KSBUNDLEDNEW", "KSBUNDLEDNEW", "KSBUNDLED", "KSBUNDLED");
         dbDiff.doDiff();
     }
@@ -194,9 +195,23 @@ public class DbDiff {
             statement = connection.getConnection().createStatement();
             ResultSet rs = statement.executeQuery(sql);
 
+            // TODO: This should check for multiple rows in the result set and throw and error.
             while (rs.next()) {
                 for (DbColumnMetadata column : table.getColumns()) {
-                   columns.put(column.getName(), rs.getString(column.getName()));
+                    //  No need to populate the key data again.
+                    if (column.isKey()) {
+                        continue;
+                    }
+                    String value = rs.getString(column.getName());
+                    //  If the value is null then no need to set it.
+                    if (value == null) {
+                        continue;
+                    }
+                    //  Single quotes have to be escaped as ''
+                    if (value.contains("'")) {
+                        value = value.replace("'", "''");
+                    }
+                    columns.put(column.getName(), value);
                 }
             }
             rs.close();
@@ -304,13 +319,12 @@ public class DbDiff {
 
             while (rs.next()) {
                 //  Get the values for each of the key columns
-                //  Map<Id, Map<col, value>>
                 Map<String, String> keyValues = new HashMap<String, String>();
                 for (DbColumnMetadata column : orderedKeyColumns) {
                     keyValues.put(column.getName(), rs.getString(column.getName()));
                 }
 
-                //  Build the key string.
+                //  Build id for the row by concatenating all of the column values into a single string.
                 StringBuffer key = new StringBuffer();
                 for (DbColumnMetadata col : orderedKeyColumns) {
                     key.append(keyValues.get(col.getName()));
@@ -391,5 +405,4 @@ public class DbDiff {
         }
         return counts;
     }
-
 }
