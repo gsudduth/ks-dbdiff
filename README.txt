@@ -4,6 +4,7 @@ Currently, only data that has been added is supported.
 
 Rows that have been deleted and rows that have been updated will simply be ignored.
 Those operations shouldn't be too difficult to support, but I didn't have time to put them in.
+Also, this tool might fit into the Kuali portfolio better as a maven plugin. Didn't have time for that either.
 
 Assumptions:
 * "before" and "after" databases are identical from a schema perspective.
