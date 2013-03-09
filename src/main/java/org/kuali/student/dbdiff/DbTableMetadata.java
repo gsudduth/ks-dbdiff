@@ -1,9 +1,7 @@
-package edu.uw.dbdiff;
+package org.kuali.student.dbdiff;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Table metadata.

@@ -1,4 +1,4 @@
-package edu.uw.dbdiff;
+package org.kuali.student.dbdiff;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package edu.uw.dbdiff;
+package org.kuali.student.dbdiff;
 
 import org.apache.commons.io.FileUtils;
 
